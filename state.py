@@ -1,4 +1,3 @@
-from tkinter import ALL
 import pandas as pd
 import math
 import numpy as np
@@ -39,19 +38,20 @@ def save_data():
     np.save('list_rank_profit_not_invest.npy', LIST_RANK_NOT_INVEST)
     np.save('list_company.npy', COMPANY)
 
-save_data()
+# save_data()
 
 @nb.njit()
 def get_in4_fomula(result_fomula, list_rank_not_invest_temp):
     list_top_comp = np.array([-1])
     list_rank_not_invest_ct = np.array([-1])
-    
+    list_comp_ct = np.array([-1])
     for j in range(len(index_test)-1, 0, -1):
         top2 = heapq.nlargest(2,result_fomula[index_test[j-1]:index_test[j]])         #lấy top 2 giá trị lớn nhất
         if top2[0] == top2[1] or np.max(result_fomula[index_test[j-1]:index_test[j]]) == np.min(result_fomula[index_test[j-1]:index_test[j]]):
             # print('toang cong thuc', top2, np.max(result_fomula[index_test[j-1]:index_test[j]]), np.min(result_fomula[index_test[j-1]:index_test[j]]))
-            return np.array([-1]), np.array([-1]), 0
+            return np.array([-1]), np.array([-1]), 0, list_comp_ct
         rank_thuc = np.argsort(-result_fomula[index_test[j-1]:index_test[j]]) + 1
+        list_comp_ct = np.append(list_comp_ct, index_test[j-1] + np.argmax(result_fomula[index_test[j-1]:index_test[j]]))
         id_not_invest = LIST_RANK_NOT_INVEST[-j] 
         if list_rank_not_invest_ct[0] == -1:
             list_rank_not_invest_ct = np.array([np.where(rank_thuc == id_not_invest)[0][0]+1])
@@ -60,7 +60,8 @@ def get_in4_fomula(result_fomula, list_rank_not_invest_temp):
             list_rank_not_invest_ct = np.append(list_rank_not_invest_ct, np.where(rank_thuc == id_not_invest)[0][0]+1)
             list_top_comp = np.append(list_top_comp, rank_thuc[:TOP_COMP_PER_QUARTER])
     list_rank_not_invest_temp = list_rank_not_invest_ct
-    return list_top_comp, list_rank_not_invest_temp, 1
+    list_comp_ct = list_comp_ct[1:]
+    return list_top_comp, list_rank_not_invest_temp, 1, list_comp_ct
 
 IN4_CT1_INDEX = 0
 IN4_CT2_INDEX = ALL_QUARTER*TOP_COMP_PER_QUARTER
@@ -99,7 +100,7 @@ def reset(ALL_IN4_SYS, LIST_ALL_COMP_PER_QUARTER):
     while count_fomula < 2:
         result_fomula = create_fomula(data_arr)
         LIST_RANK_NOT_INVEST_TEMP = np.zeros(ALL_QUARTER)
-        temp, LIST_RANK_NOT_INVEST_TEMP, check = get_in4_fomula(result_fomula, LIST_RANK_NOT_INVEST_TEMP)
+        temp, LIST_RANK_NOT_INVEST_TEMP, check, list_comp_ct = get_in4_fomula(result_fomula, LIST_RANK_NOT_INVEST_TEMP)
         # print('check getin4', len(temp), check, result_fomula[:10], temp[:10])
         # print('TEMP, ', LIST_RANK_NOT_INVEST_TEMP[:10])
         count_fomula += check
@@ -108,12 +109,15 @@ def reset(ALL_IN4_SYS, LIST_ALL_COMP_PER_QUARTER):
             # ALL_IN4_SYS[1] = temp.copy()
             # LIST_RANK_NOT_INVEST_CT1 = LIST_RANK_NOT_INVEST_TEMP.copy()
             ALL_IN4_SYS[1] = LIST_RANK_NOT_INVEST_TEMP.copy() 
+            ALL_IN4_SYS[3] = list_comp_ct.copy()
             # list_fomula.append(fomula)
         elif count_fomula == 2 and check == 1:
             LIST_RANK_CT2 = temp.copy()
             # ALL_IN4_SYS[3] = temp.copy()
             # LIST_RANK_NOT_INVEST_CT2 = LIST_RANK_NOT_INVEST_TEMP.copy()
             ALL_IN4_SYS[2] = LIST_RANK_NOT_INVEST_TEMP.copy() 
+            ALL_IN4_SYS[4] = list_comp_ct.copy()
+
             # list_fomula.append(fomula)
 
     id_not_invest_ct1 = ALL_IN4_SYS[1][0]
@@ -187,8 +191,8 @@ def state_to_player(env_state):
     player_state[P_ID_NOT_INVEST_CT1] = env_state[ID_NOT_INVEST_CT1]
     player_state[P_ID_NOT_INVEST_CT2] = env_state[ID_NOT_INVEST_CT2]
     if env_state[CURRENT_QUARTER_INDEX] != 0:
-        history_ct1 = env_state[max(IN4_CT1_INDEX, TOP_COMP_PER_QUARTER*(env_state[CURRENT_QUARTER_INDEX]-24)):int(env_state[CURRENT_QUARTER_INDEX]*TOP_COMP_PER_QUARTER)]
-        history_ct2 = env_state[max(IN4_CT2_INDEX, TOP_COMP_PER_QUARTER*(env_state[CURRENT_QUARTER_INDEX]-24)+IN4_CT2_INDEX):int(env_state[CURRENT_QUARTER_INDEX]*TOP_COMP_PER_QUARTER)+IN4_CT2_INDEX]
+        history_ct1 = env_state[max(IN4_CT1_INDEX, TOP_COMP_PER_QUARTER*(env_state[CURRENT_QUARTER_INDEX]-NUMBER_QUARTER_HISTORY)):int(env_state[CURRENT_QUARTER_INDEX]*TOP_COMP_PER_QUARTER)]
+        history_ct2 = env_state[max(IN4_CT2_INDEX, TOP_COMP_PER_QUARTER*(env_state[CURRENT_QUARTER_INDEX]-NUMBER_QUARTER_HISTORY)+IN4_CT2_INDEX):int(env_state[CURRENT_QUARTER_INDEX]*TOP_COMP_PER_QUARTER)+IN4_CT2_INDEX]
         len_bonus = int(TOP_COMP_PER_QUARTER * (NUMBER_QUARTER_HISTORY - env_state[CURRENT_QUARTER_INDEX]))
         if len_bonus > 0:
             a = np.zeros(len_bonus)
@@ -210,9 +214,14 @@ def state_to_player(env_state):
     player_state[P_NUMBER_COMP_INDEX] = env_state[NUMBER_COMP_INDEX]
     return player_state
 
-@nb.njit()
+# @nb.njit()
 def step(action, env_state, ALL_IN4_SYS, LIST_ALL_COMP_PER_QUARTER):
-    # print('action step: ', action)
+    # print('action step: ', action, int(env_state[CURRENT_QUARTER_INDEX]), ALL_IN4_SYS)
+    # if action == 1:
+    #     print(ALL_IN4_SYS[3][int(env_state[CURRENT_QUARTER_INDEX])], COMPANY[int(ALL_IN4_SYS[4][int(env_state[CURRENT_QUARTER_INDEX])])])
+    # elif action == 2:
+    #     print(ALL_IN4_SYS[4][int(env_state[CURRENT_QUARTER_INDEX])], COMPANY[int(ALL_IN4_SYS[4][int(env_state[CURRENT_QUARTER_INDEX])])])
+
     id_action = env_state[ID_ACTION_INDEX]
     result_quarter = 0
     if action == 0:
@@ -232,6 +241,15 @@ def step(action, env_state, ALL_IN4_SYS, LIST_ALL_COMP_PER_QUARTER):
     top_action = np.where(rank_3_action == result_quarter)[0][0] + 1
     # print('quarter', int(env_state[CURRENT_QUARTER_INDEX]),'check', 1/top_action, 'action', action, 'topaction',rank_3_action)
     env_state[int(HISTORY_AGENT_INDEX + ALL_QUARTER*id_action +env_state[CURRENT_QUARTER_INDEX])] = (4-top_action)/3
+
+    if env_state[ID_ACTION_INDEX] == 0 and env_state[CURRENT_QUARTER_INDEX] == ALL_QUARTER-1:
+        if action == 0:
+            print('Không đầu tư quý này')
+        else:
+            print('Đầu tư công ty ', COMPANY[int(ALL_IN4_SYS[int(2 + action)][int(env_state[CURRENT_QUARTER_INDEX])])], ALL_IN4_SYS[int(2 + action)][int(env_state[CURRENT_QUARTER_INDEX])])
+
+
+
     if env_state[ID_ACTION_INDEX] == 1:
         env_state[CURRENT_QUARTER_INDEX] += 1  
         #rank giá trị công thức của việc không đầu tư
@@ -361,7 +379,7 @@ def check_victory_level(player_state):
     else: return -1
 
 def one_game_level(list_player, temp_file, per_file, LIST_RANK_NOT_INVEST, LEVEL, LIST_ALL_COMP_PER_QUARTER):
-    ALL_IN4_SYS = np.array([LIST_RANK_NOT_INVEST, np.zeros(ALL_QUARTER), np.zeros(ALL_QUARTER)])
+    ALL_IN4_SYS = np.array([LIST_RANK_NOT_INVEST, np.zeros(ALL_QUARTER), np.zeros(ALL_QUARTER), np.zeros(ALL_QUARTER), np.zeros(ALL_QUARTER)])
     env_state, ALL_IN4_SYS = reset(ALL_IN4_SYS, LIST_ALL_COMP_PER_QUARTER)
     env_state[LEVEL_RATIO_INDEX] = LEVEL
     count_turn = 0
